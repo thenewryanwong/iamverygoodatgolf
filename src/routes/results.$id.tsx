@@ -3,9 +3,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { getSession, updateFeedback, type SessionRecord } from "@/lib/storage";
 import { KP } from "@/lib/pose/detector";
+import { idealPose, fitPoseToBox, type IdealPhase } from "@/lib/pose/idealPose";
 import {
   ChevronLeft, Activity, Sparkles, Play, ThumbsUp, ThumbsDown, Share2,
-  Pause, Eye, EyeOff, Gauge,
+  Pause, Eye, EyeOff, Gauge, Layers,
 } from "lucide-react";
 import type { SwingError } from "@/lib/pose/analyze";
 

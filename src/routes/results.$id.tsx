@@ -306,7 +306,241 @@ function drawSkeleton(ctx: CanvasRenderingContext2D, kp: any[], analysis: any) {
   }
 }
 
+/* ---------------- Compare with perfect swing ---------------- */
+
+function ComparePanel({ session }: { session: SessionRecord }) {
+  const [phase, setPhase] = useState<IdealPhase>("top");
+  const [overlay, setOverlay] = useState(false);
+  const yourCanvasRef = useRef<HTMLCanvasElement>(null);
+  const idealCanvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Pick the user's frame closest to the requested phase.
+  const userKp = useMemo(() => {
+    const ph = session.analysis.phases;
+    const target = ph[phase];
+    const frames = session.analysis.frames;
+    if (!frames.length) return null;
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < frames.length; i++) {
+      const d = Math.abs(frames[i].t - target);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return frames[best].keypoints;
+  }, [session, phase]);
+
+  // Render two side-by-side stick figures (your swing vs perfect).
+  useEffect(() => {
+    const render = (canvas: HTMLCanvasElement | null, kp: any[] | null, srcW?: number, srcH?: number) => {
+      if (!canvas || !kp) return;
+      const dpr = window.devicePixelRatio || 1;
+      const W = canvas.clientWidth, H = canvas.clientHeight;
+      canvas.width = W * dpr; canvas.height = H * dpr;
+      const ctx = canvas.getContext("2d")!;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      const fitted = srcW ? fitPoseToBox(kp, W, H, srcW, srcH) : fitPoseToBox(kp, W, H, session.videoWidth, session.videoHeight);
+      drawSkeleton(ctx, fitted as any, session.analysis);
+    };
+    render(yourCanvasRef.current, userKp ?? null);
+    render(idealCanvasRef.current, idealPose(phase), 100, 220);
+
+    // Overlay: ideal in gold dashed lines over user's pose.
+    const oc = overlayCanvasRef.current;
+    if (oc && overlay && userKp) {
+      const dpr = window.devicePixelRatio || 1;
+      const W = oc.clientWidth, H = oc.clientHeight;
+      oc.width = W * dpr; oc.height = H * dpr;
+      const ctx = oc.getContext("2d")!;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      // Draw user pose with the regular palette.
+      const userFitted = fitPoseToBox(userKp as any, W, H, session.videoWidth, session.videoHeight);
+      drawSkeleton(ctx, userFitted as any, session.analysis);
+      // Draw ideal in gold over the top, aligned to the user's torso.
+      const ideal = fitPoseToBox(idealPose(phase), W, H, 100, 220);
+      const alignedIdeal = alignPoseTo(ideal, userFitted as any);
+      drawIdealOverlay(ctx, alignedIdeal);
+    }
+  }, [userKp, phase, overlay, session]);
+
+  return (
+    <div className="mt-4 rounded-2xl bg-card border border-border p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <p className="text-[11px] uppercase tracking-widest text-accent font-bold">Compare</p>
+          <h3 className="text-sm font-semibold">Your swing vs perfect</h3>
+        </div>
+        <button
+          onClick={() => setOverlay(o => !o)}
+          className={`h-9 px-3 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${
+            overlay ? "bg-accent text-accent-foreground border-accent" : "bg-card border-border text-muted-foreground"
+          }`}
+          aria-label="Overlay ideal swing"
+        >
+          <Layers className="h-3.5 w-3.5" />
+          {overlay ? "Overlay on" : "Overlay"}
+        </button>
+      </div>
+
+      {/* Phase picker */}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {(["address", "top", "impact"] as IdealPhase[]).map(p => (
+          <button
+            key={p}
+            onClick={() => setPhase(p)}
+            className={`py-2 rounded-full text-xs font-semibold border capitalize ${
+              phase === p ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground"
+            }`}
+          >
+            {p === "top" ? "Top of swing" : p}
+          </button>
+        ))}
+      </div>
+
+      {overlay ? (
+        <div className="mt-4">
+          <div className="rounded-xl bg-black aspect-[3/4] overflow-hidden">
+            <canvas ref={overlayCanvasRef} className="h-full w-full block" />
+          </div>
+          <div className="mt-2 flex items-center justify-center gap-4 text-[11px] text-muted-foreground">
+            <LegendDot color="rgba(80,200,120,0.95)" label="Your pose" />
+            <LegendDot color="var(--gold)" label="Ideal pose" dashed />
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <FigureBox label="You" canvasRef={yourCanvasRef} />
+          <FigureBox label="Perfect" canvasRef={idealCanvasRef} />
+        </div>
+      )}
+
+      <IdealNotes phase={phase} session={session} />
+    </div>
+  );
+}
+
+function FigureBox({ label, canvasRef }: { label: string; canvasRef: React.RefObject<HTMLCanvasElement | null> }) {
+  return (
+    <div>
+      <div className="rounded-xl bg-black aspect-[3/4] overflow-hidden">
+        <canvas ref={canvasRef} className="h-full w-full block" />
+      </div>
+      <p className="mt-1.5 text-center text-[11px] font-semibold tracking-wide uppercase text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function LegendDot({ color, label, dashed = false }: { color: string; label: string; dashed?: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        className="inline-block h-3 w-5 rounded-sm"
+        style={{
+          background: dashed
+            ? `repeating-linear-gradient(90deg, ${color} 0 3px, transparent 3px 6px)`
+            : color,
+        }}
+      />
+      {label}
+    </span>
+  );
+}
+
+// Translate + scale an ideal pose so its shoulder-mid and hip-mid match the
+// user's, keeping the comparison meaningful regardless of camera framing.
+function alignPoseTo(ideal: { x: number; y: number; score?: number }[], user: { x: number; y: number; score?: number }[]) {
+  const mid = (a: any, b: any) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const dist = (a: any, b: any) => Math.hypot(a.x - b.x, a.y - b.y);
+  const uShoul = mid(user[KP.LEFT_SHOULDER], user[KP.RIGHT_SHOULDER]);
+  const uHip   = mid(user[KP.LEFT_HIP], user[KP.RIGHT_HIP]);
+  const iShoul = mid(ideal[KP.LEFT_SHOULDER], ideal[KP.RIGHT_SHOULDER]);
+  const iHip   = mid(ideal[KP.LEFT_HIP], ideal[KP.RIGHT_HIP]);
+  const userTorso = dist(uShoul, uHip) || 1;
+  const idealTorso = dist(iShoul, iHip) || 1;
+  const s = userTorso / idealTorso;
+  return ideal.map(p => ({
+    x: uShoul.x + (p.x - iShoul.x) * s,
+    y: uShoul.y + (p.y - iShoul.y) * s,
+    score: p.score,
+  }));
+}
+
+function drawIdealOverlay(ctx: CanvasRenderingContext2D, kp: { x: number; y: number }[]) {
+  const segs: [number, number][] = [
+    [KP.LEFT_SHOULDER, KP.RIGHT_SHOULDER],
+    [KP.LEFT_SHOULDER, KP.LEFT_ELBOW], [KP.LEFT_ELBOW, KP.LEFT_WRIST],
+    [KP.RIGHT_SHOULDER, KP.RIGHT_ELBOW], [KP.RIGHT_ELBOW, KP.RIGHT_WRIST],
+    [KP.LEFT_HIP, KP.RIGHT_HIP],
+    [KP.LEFT_HIP, KP.LEFT_KNEE], [KP.LEFT_KNEE, KP.LEFT_ANKLE],
+    [KP.RIGHT_HIP, KP.RIGHT_KNEE], [KP.RIGHT_KNEE, KP.RIGHT_ANKLE],
+    [KP.LEFT_SHOULDER, KP.LEFT_HIP], [KP.RIGHT_SHOULDER, KP.RIGHT_HIP],
+  ];
+  ctx.save();
+  ctx.strokeStyle = "rgba(201, 162, 39, 0.95)"; // brand gold
+  ctx.lineWidth = Math.max(3, ctx.canvas.width / 180);
+  ctx.setLineDash([6, 4]);
+  ctx.lineCap = "round";
+  for (const [a, b] of segs) {
+    const pa = kp[a], pb = kp[b]; if (!pa || !pb) continue;
+    ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function IdealNotes({ phase, session }: { phase: IdealPhase; session: SessionRecord }) {
+  const m = session.analysis.metrics;
+  const notes: Record<IdealPhase, { title: string; rows: { k: string; you: string; ideal: string }[] }> = {
+    address: {
+      title: "Setup checkpoints",
+      rows: [
+        { k: "Spine tilt",    you: `${Math.round(m.spineTiltAddress)}°`, ideal: "25–40°" },
+        { k: "Shoulders",     you: "—",                                  ideal: "Square to target" },
+        { k: "Weight",        you: "—",                                  ideal: "50 / 50" },
+      ],
+    },
+    top: {
+      title: "Top-of-swing checkpoints",
+      rows: [
+        { k: "Shoulder turn",  you: `${Math.round(m.shoulderTurn)}°`,         ideal: "85–105°" },
+        { k: "Hip turn",       you: `${Math.round(m.hipTurn)}°`,              ideal: "40–55°" },
+        { k: "X-Factor",       you: `${Math.round(m.xFactor)}°`,              ideal: "35–55°" },
+        { k: "Lead arm",       you: `${Math.round(m.leadArmStraightness)}°`,  ideal: "160–180°" },
+        { k: "Wrist hinge",    you: `${Math.round(m.wristHinge)}°`,           ideal: "75–100°" },
+      ],
+    },
+    impact: {
+      title: "Impact checkpoints",
+      rows: [
+        { k: "Hips",           you: "—",                                ideal: "~40° open" },
+        { k: "Posture drift",  you: `${Math.round(m.spineTiltDrift)}°`, ideal: "≤ 10°" },
+        { k: "Head sway",      you: `${m.headLateral.toFixed(1)}%`,     ideal: "≤ 4%" },
+      ],
+    },
+  };
+  const data = notes[phase];
+  return (
+    <div className="mt-4 rounded-xl bg-muted/40 p-3">
+      <p className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">{data.title}</p>
+      <div className="mt-2 divide-y divide-border">
+        {data.rows.map(r => (
+          <div key={r.k} className="flex items-center justify-between py-1.5 text-xs">
+            <span className="font-medium">{r.k}</span>
+            <span className="text-muted-foreground">
+              <span className="text-foreground font-semibold">{r.you}</span>
+              <span className="mx-1.5 opacity-60">vs</span>
+              <span className="text-accent font-semibold">{r.ideal}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Tips ---------------- */
+
+
 
 function TipsPanel({ errors, session, onPlay }: { errors: SwingError[]; session: SessionRecord; onPlay: (e: SwingError) => void }) {
   if (!errors.length) {

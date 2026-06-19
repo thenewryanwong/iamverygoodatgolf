@@ -218,6 +218,11 @@ function MetricsPanel({ session }: { session: SessionRecord }) {
       {/* Stick figure on still */}
       <StillWithSkeleton session={session} />
 
+      {/* Side-by-side comparison vs an ideal swing */}
+      <ComparePanel session={session} />
+
+
+
       <div className="mt-4 rounded-2xl bg-card border border-border overflow-hidden">
         {rows.map((r, i) => {
           const ok = r.v >= r.range[0] && r.v <= r.range[1];

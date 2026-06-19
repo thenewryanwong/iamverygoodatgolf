@@ -5,7 +5,7 @@ import { estimateFrame, type FramePose } from "@/lib/pose/detector";
 import { analyzeSwing } from "@/lib/pose/analyze";
 import { saveSession } from "@/lib/storage";
 import {
-  Camera, CameraOff, ChevronLeft, RefreshCw, Upload, Loader2, CircleDot,
+  Camera, CameraOff, ChevronLeft, RefreshCw, Upload, Loader2, CircleDot, HelpCircle, X,
 } from "lucide-react";
 
 export const Route = createFileRoute("/record")({
@@ -23,11 +23,12 @@ function RecordPage() {
   const chunksRef = useRef<Blob[]>([]);
   const [phase, setPhase] = useState<Phase>("setup");
   const [facing, setFacing] = useState<"environment" | "user">("environment");
-  const [countdown, setCountdown] = useState(3);
+  const [countdown, setCountdown] = useState(5);
   const [recordSecs, setRecordSecs] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("Loading model…");
+  const [showTutorial, setShowTutorial] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const startCamera = useCallback(async () => {
@@ -39,9 +40,12 @@ function RecordPage() {
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
+      const v = videoRef.current;
+      if (v) {
+        v.srcObject = stream;
+        v.onloadedmetadata = () => { v.play().catch(() => {}); };
+        // Belt-and-braces: some mobile browsers don't fire onloadedmetadata reliably.
+        try { await v.play(); } catch {}
       }
       setPhase("ready");
     } catch (e: any) {
@@ -54,12 +58,12 @@ function RecordPage() {
 
   const beginCountdown = () => {
     setPhase("countdown");
-    setCountdown(3);
-    let n = 3;
+    setCountdown(5);
+    let n = 5;
     const id = setInterval(() => {
       n -= 1;
       if (n <= 0) { clearInterval(id); startRecording(); } else setCountdown(n);
-    }, 800);
+    }, 1000);
   };
 
   const startRecording = () => {
@@ -176,13 +180,22 @@ function RecordPage() {
             <div className="px-3 py-1.5 rounded-full bg-black/40 backdrop-blur text-xs font-medium">
               {phase === "recording" ? `● ${recordSecs.toFixed(1)}s` : phase === "ready" ? "Ready" : phase === "setup" ? "Setup" : ""}
             </div>
-            <button
-              onClick={() => setFacing(f => f === "environment" ? "user" : "environment")}
-              className="h-10 w-10 grid place-items-center rounded-full bg-black/40 backdrop-blur"
-              aria-label="Flip camera"
-            >
-              <RefreshCw className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowTutorial(true)}
+                className="h-10 w-10 grid place-items-center rounded-full bg-black/40 backdrop-blur"
+                aria-label="How to use"
+              >
+                <HelpCircle className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => setFacing(f => f === "environment" ? "user" : "environment")}
+                className="h-10 w-10 grid place-items-center rounded-full bg-black/40 backdrop-blur"
+                aria-label="Flip camera"
+              >
+                <RefreshCw className="h-5 w-5" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -192,16 +205,55 @@ function RecordPage() {
             <video
               ref={videoRef}
               className="h-full w-full object-cover"
-              playsInline muted
+              playsInline muted autoPlay
               style={{ transform: facing === "user" ? "scaleX(-1)" : undefined }}
             />
           )}
-          {/* Silhouette guide */}
+          {/* Golf-stance silhouette guide — bright yellow with dark outline so it stays
+              visible on any background (grass, indoor, bright sky). */}
           {(phase === "setup" || phase === "ready") && (
-            <svg viewBox="0 0 100 220" className="absolute inset-0 m-auto h-[70%] w-auto opacity-25 text-accent" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="50" cy="22" r="10" />
-              <path d="M50 32 L50 110 M30 55 L70 55 M50 110 L34 180 M50 110 L66 180" strokeLinecap="round" />
-            </svg>
+            <div className="absolute inset-0 grid place-items-center pointer-events-none">
+              <svg
+                viewBox="0 0 120 240"
+                className="h-[75%] w-auto drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]"
+                fill="none"
+                stroke="#FFD23F"
+                strokeWidth="3.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ filter: "drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000)" }}
+              >
+                {/* Head — tilted slightly forward, addressing the ball */}
+                <circle cx="62" cy="28" r="11" fill="rgba(255,210,63,0.18)" />
+                {/* Spine — tilted forward over the ball */}
+                <path d="M62 39 L56 110" />
+                {/* Shoulders — slightly turned */}
+                <path d="M44 56 L72 52" />
+                {/* Lead arm (front) reaching down to grip */}
+                <path d="M44 56 L52 95 L60 128" />
+                {/* Trail arm meeting at the grip */}
+                <path d="M72 52 L66 92 L60 128" />
+                {/* Hands / grip dot */}
+                <circle cx="60" cy="130" r="3" fill="#FFD23F" />
+                {/* Club shaft + head down to the ball */}
+                <path d="M60 130 L78 200" />
+                <ellipse cx="80" cy="204" rx="6" ry="3" fill="#FFD23F" />
+                {/* Hips */}
+                <path d="M48 112 L68 110" />
+                {/* Lead leg (slightly flexed) */}
+                <path d="M48 112 L46 170 L44 215" />
+                {/* Trail leg */}
+                <path d="M68 110 L74 170 L78 215" />
+                {/* Feet — shoulder width apart */}
+                <path d="M36 218 L52 218" strokeWidth="5" />
+                <path d="M70 218 L86 218" strokeWidth="5" />
+                {/* Ball */}
+                <circle cx="80" cy="210" r="3" fill="#fff" stroke="#000" strokeWidth="1" />
+              </svg>
+              <div className="absolute bottom-[18%] left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-black/60 text-[11px] font-semibold text-yellow-300 tracking-wide">
+                Match this stance
+              </div>
+            </div>
           )}
           {/* Countdown overlay */}
           {phase === "countdown" && (
@@ -290,6 +342,47 @@ function RecordPage() {
           className="hidden"
           onChange={onFileUpload}
         />
+
+        {/* Tutorial modal */}
+        {showTutorial && (
+          <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur grid place-items-end sm:place-items-center">
+            <div className="w-full sm:max-w-md bg-card text-card-foreground rounded-t-3xl sm:rounded-3xl p-6 max-h-[85vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-bold">How to record your swing</h2>
+                <button
+                  onClick={() => setShowTutorial(false)}
+                  className="h-9 w-9 grid place-items-center rounded-full bg-muted"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <ol className="space-y-3 text-sm">
+                {[
+                  { t: "Prop your phone up", d: "Place it at hip-to-waist height, 6–8 feet away, in portrait mode." },
+                  { t: "Stand sideways (down-the-line)", d: "Camera should see you from behind, looking down the target line." },
+                  { t: "Match the yellow stance guide", d: "Line up your head, shoulders, hips and feet with the silhouette so your full body is in frame." },
+                  { t: "Tap the yellow record button", d: "You get a 5-second countdown to settle into your stance." },
+                  { t: "Swing naturally", d: "Recording auto-stops after 10 seconds. We'll analyze posture, rotation, plane, tempo and balance — all on-device." },
+                ].map((s, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="h-7 w-7 shrink-0 rounded-full bg-accent text-accent-foreground grid place-items-center text-xs font-bold">{i + 1}</span>
+                    <div>
+                      <p className="font-semibold">{s.t}</p>
+                      <p className="text-muted-foreground text-[13px]">{s.d}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <button
+                onClick={() => setShowTutorial(false)}
+                className="mt-5 w-full rounded-full bg-primary text-primary-foreground py-3 text-sm font-semibold"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   );

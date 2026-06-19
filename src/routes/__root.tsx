@@ -49,13 +49,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { name: "theme-color", content: "#1B3A2D" },
-      { title: "SwingSense AI — Your AI golf swing coach" },
-      { name: "description", content: "Record your golf swing and get instant, on-device AI analysis: angles, tempo, balance, and timestamped tips." },
+      { title: "AI golf swing coach" },
+      { name: "description", content: "record your golf swing and get analytics based on angles, tempo, balance, and timestamped tips!" },
       { name: "author", content: "SwingSense" },
-      { property: "og:title", content: "SwingSense AI" },
-      { property: "og:description", content: "Your AI golf swing coach — instant, private, on-device analysis." },
+      { property: "og:title", content: "AI golf swing coach" },
+      { property: "og:description", content: "record your golf swing and get analytics based on angles, tempo, balance, and timestamped tips!" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "AI golf swing coach" },
+      { name: "twitter:description", content: "record your golf swing and get analytics based on angles, tempo, balance, and timestamped tips!" },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/542ff55f-a2ee-4f01-babb-c1b868b8bb19/id-preview-4f2fbbad--9bd44cbf-eaa3-43eb-a54c-111ec8805f01.lovable.app-1781854803702.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/542ff55f-a2ee-4f01-babb-c1b868b8bb19/id-preview-4f2fbbad--9bd44cbf-eaa3-43eb-a54c-111ec8805f01.lovable.app-1781854803702.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
@@ -82,24 +86,6 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  useEffect(() => {
-    // Recover from stale chunk imports after a deploy/dev rebuild,
-    // which surfaces as "Failed to fetch dynamically imported module"
-    // and a blank white screen on the next navigation.
-    const onRejection = (e: PromiseRejectionEvent) => {
-      const msg = String(e.reason?.message ?? e.reason ?? "");
-      if (/dynamically imported module|Importing a module script failed|Failed to fetch/i.test(msg)) {
-        const key = "__ss_reloaded_at";
-        const last = Number(sessionStorage.getItem(key) ?? 0);
-        if (Date.now() - last > 10_000) {
-          sessionStorage.setItem(key, String(Date.now()));
-          window.location.reload();
-        }
-      }
-    };
-    window.addEventListener("unhandledrejection", onRejection);
-    return () => window.removeEventListener("unhandledrejection", onRejection);
-  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />

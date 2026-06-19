@@ -54,36 +54,16 @@ function RecordPage() {
     }
   }, [facing]);
 
-  const startCamera = useCallback(async () => {
-    setError(null);
-    try {
-      streamRef.current?.getTracks().forEach(t => t.stop());
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 720 }, height: { ideal: 1280 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
-      }
-      setPhase("ready");
-    } catch (e: any) {
-      setError(e?.message ?? "Camera access denied");
-      setPhase("error");
-    }
-  }, [facing]);
-
   useEffect(() => { startCamera(); return () => { streamRef.current?.getTracks().forEach(t => t.stop()); }; }, [startCamera]);
 
   const beginCountdown = () => {
     setPhase("countdown");
-    setCountdown(3);
-    let n = 3;
+    setCountdown(5);
+    let n = 5;
     const id = setInterval(() => {
       n -= 1;
       if (n <= 0) { clearInterval(id); startRecording(); } else setCountdown(n);
-    }, 800);
+    }, 1000);
   };
 
   const startRecording = () => {

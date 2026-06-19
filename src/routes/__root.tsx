@@ -82,6 +82,24 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useEffect(() => {
+    // Recover from stale chunk imports after a deploy/dev rebuild,
+    // which surfaces as "Failed to fetch dynamically imported module"
+    // and a blank white screen on the next navigation.
+    const onRejection = (e: PromiseRejectionEvent) => {
+      const msg = String(e.reason?.message ?? e.reason ?? "");
+      if (/dynamically imported module|Importing a module script failed|Failed to fetch/i.test(msg)) {
+        const key = "__ss_reloaded_at";
+        const last = Number(sessionStorage.getItem(key) ?? 0);
+        if (Date.now() - last > 10_000) {
+          sessionStorage.setItem(key, String(Date.now()));
+          window.location.reload();
+        }
+      }
+    };
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => window.removeEventListener("unhandledrejection", onRejection);
+  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />

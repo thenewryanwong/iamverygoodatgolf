@@ -5,7 +5,7 @@ import { estimateFrame, type FramePose } from "@/lib/pose/detector";
 import { analyzeSwing } from "@/lib/pose/analyze";
 import { saveSession } from "@/lib/storage";
 import {
-  Camera, CameraOff, ChevronLeft, RefreshCw, Upload, Loader2, CircleDot,
+  Camera, CameraOff, ChevronLeft, RefreshCw, Upload, Loader2, CircleDot, HelpCircle, X,
 } from "lucide-react";
 
 export const Route = createFileRoute("/record")({
@@ -23,12 +23,36 @@ function RecordPage() {
   const chunksRef = useRef<Blob[]>([]);
   const [phase, setPhase] = useState<Phase>("setup");
   const [facing, setFacing] = useState<"environment" | "user">("environment");
-  const [countdown, setCountdown] = useState(3);
+  const [countdown, setCountdown] = useState(5);
   const [recordSecs, setRecordSecs] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("Loading model…");
+  const [showTutorial, setShowTutorial] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const startCamera = useCallback(async () => {
+    setError(null);
+    try {
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 720 }, height: { ideal: 1280 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      const v = videoRef.current;
+      if (v) {
+        v.srcObject = stream;
+        v.onloadedmetadata = () => { v.play().catch(() => {}); };
+        // Belt-and-braces: some mobile browsers don't fire onloadedmetadata reliably.
+        try { await v.play(); } catch {}
+      }
+      setPhase("ready");
+    } catch (e: any) {
+      setError(e?.message ?? "Camera access denied");
+      setPhase("error");
+    }
+  }, [facing]);
 
   const startCamera = useCallback(async () => {
     setError(null);

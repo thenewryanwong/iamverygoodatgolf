@@ -342,6 +342,47 @@ function RecordPage() {
           className="hidden"
           onChange={onFileUpload}
         />
+
+        {/* Tutorial modal */}
+        {showTutorial && (
+          <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur grid place-items-end sm:place-items-center">
+            <div className="w-full sm:max-w-md bg-card text-card-foreground rounded-t-3xl sm:rounded-3xl p-6 max-h-[85vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-bold">How to record your swing</h2>
+                <button
+                  onClick={() => setShowTutorial(false)}
+                  className="h-9 w-9 grid place-items-center rounded-full bg-muted"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <ol className="space-y-3 text-sm">
+                {[
+                  { t: "Prop your phone up", d: "Place it at hip-to-waist height, 6–8 feet away, in portrait mode." },
+                  { t: "Stand sideways (down-the-line)", d: "Camera should see you from behind, looking down the target line." },
+                  { t: "Match the yellow stance guide", d: "Line up your head, shoulders, hips and feet with the silhouette so your full body is in frame." },
+                  { t: "Tap the yellow record button", d: "You get a 5-second countdown to settle into your stance." },
+                  { t: "Swing naturally", d: "Recording auto-stops after 10 seconds. We'll analyze posture, rotation, plane, tempo and balance — all on-device." },
+                ].map((s, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="h-7 w-7 shrink-0 rounded-full bg-accent text-accent-foreground grid place-items-center text-xs font-bold">{i + 1}</span>
+                    <div>
+                      <p className="font-semibold">{s.t}</p>
+                      <p className="text-muted-foreground text-[13px]">{s.d}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <button
+                onClick={() => setShowTutorial(false)}
+                className="mt-5 w-full rounded-full bg-primary text-primary-foreground py-3 text-sm font-semibold"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   );

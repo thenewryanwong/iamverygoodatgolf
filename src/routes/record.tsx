@@ -180,13 +180,22 @@ function RecordPage() {
             <div className="px-3 py-1.5 rounded-full bg-black/40 backdrop-blur text-xs font-medium">
               {phase === "recording" ? `● ${recordSecs.toFixed(1)}s` : phase === "ready" ? "Ready" : phase === "setup" ? "Setup" : ""}
             </div>
-            <button
-              onClick={() => setFacing(f => f === "environment" ? "user" : "environment")}
-              className="h-10 w-10 grid place-items-center rounded-full bg-black/40 backdrop-blur"
-              aria-label="Flip camera"
-            >
-              <RefreshCw className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowTutorial(true)}
+                className="h-10 w-10 grid place-items-center rounded-full bg-black/40 backdrop-blur"
+                aria-label="How to use"
+              >
+                <HelpCircle className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => setFacing(f => f === "environment" ? "user" : "environment")}
+                className="h-10 w-10 grid place-items-center rounded-full bg-black/40 backdrop-blur"
+                aria-label="Flip camera"
+              >
+                <RefreshCw className="h-5 w-5" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -196,16 +205,55 @@ function RecordPage() {
             <video
               ref={videoRef}
               className="h-full w-full object-cover"
-              playsInline muted
+              playsInline muted autoPlay
               style={{ transform: facing === "user" ? "scaleX(-1)" : undefined }}
             />
           )}
-          {/* Silhouette guide */}
+          {/* Golf-stance silhouette guide — bright yellow with dark outline so it stays
+              visible on any background (grass, indoor, bright sky). */}
           {(phase === "setup" || phase === "ready") && (
-            <svg viewBox="0 0 100 220" className="absolute inset-0 m-auto h-[70%] w-auto opacity-25 text-accent" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="50" cy="22" r="10" />
-              <path d="M50 32 L50 110 M30 55 L70 55 M50 110 L34 180 M50 110 L66 180" strokeLinecap="round" />
-            </svg>
+            <div className="absolute inset-0 grid place-items-center pointer-events-none">
+              <svg
+                viewBox="0 0 120 240"
+                className="h-[75%] w-auto drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]"
+                fill="none"
+                stroke="#FFD23F"
+                strokeWidth="3.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ filter: "drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000)" }}
+              >
+                {/* Head — tilted slightly forward, addressing the ball */}
+                <circle cx="62" cy="28" r="11" fill="rgba(255,210,63,0.18)" />
+                {/* Spine — tilted forward over the ball */}
+                <path d="M62 39 L56 110" />
+                {/* Shoulders — slightly turned */}
+                <path d="M44 56 L72 52" />
+                {/* Lead arm (front) reaching down to grip */}
+                <path d="M44 56 L52 95 L60 128" />
+                {/* Trail arm meeting at the grip */}
+                <path d="M72 52 L66 92 L60 128" />
+                {/* Hands / grip dot */}
+                <circle cx="60" cy="130" r="3" fill="#FFD23F" />
+                {/* Club shaft + head down to the ball */}
+                <path d="M60 130 L78 200" />
+                <ellipse cx="80" cy="204" rx="6" ry="3" fill="#FFD23F" />
+                {/* Hips */}
+                <path d="M48 112 L68 110" />
+                {/* Lead leg (slightly flexed) */}
+                <path d="M48 112 L46 170 L44 215" />
+                {/* Trail leg */}
+                <path d="M68 110 L74 170 L78 215" />
+                {/* Feet — shoulder width apart */}
+                <path d="M36 218 L52 218" strokeWidth="5" />
+                <path d="M70 218 L86 218" strokeWidth="5" />
+                {/* Ball */}
+                <circle cx="80" cy="210" r="3" fill="#fff" stroke="#000" strokeWidth="1" />
+              </svg>
+              <div className="absolute bottom-[18%] left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-black/60 text-[11px] font-semibold text-yellow-300 tracking-wide">
+                Match this stance
+              </div>
+            </div>
           )}
           {/* Countdown overlay */}
           {phase === "countdown" && (

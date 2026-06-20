@@ -461,6 +461,35 @@ function SkeletonCompare({
   );
 }
 
+function drawSkeleton(ctx: CanvasRenderingContext2D, kp: any[], analysis: any) {
+  const m = analysis.metrics;
+  const lines: { a: number; b: number; color: string }[] = [
+    { a: KP.LEFT_SHOULDER, b: KP.RIGHT_SHOULDER, color: m.shoulderTurn >= 85 && m.shoulderTurn <= 105 ? "good" : "bad" },
+    { a: KP.LEFT_HIP, b: KP.RIGHT_HIP, color: m.hipTurn >= 40 && m.hipTurn <= 55 ? "good" : "bad" },
+    { a: KP.LEFT_SHOULDER, b: KP.LEFT_ELBOW, color: m.leadArmStraightness >= 160 ? "good" : "bad" },
+    { a: KP.LEFT_ELBOW, b: KP.LEFT_WRIST, color: m.leadArmStraightness >= 160 ? "good" : "bad" },
+    { a: KP.RIGHT_SHOULDER, b: KP.RIGHT_ELBOW, color: "good" },
+    { a: KP.RIGHT_ELBOW, b: KP.RIGHT_WRIST, color: "good" },
+    { a: KP.LEFT_HIP, b: KP.LEFT_KNEE, color: "good" },
+    { a: KP.LEFT_KNEE, b: KP.LEFT_ANKLE, color: "good" },
+    { a: KP.RIGHT_HIP, b: KP.RIGHT_KNEE, color: "good" },
+    { a: KP.RIGHT_KNEE, b: KP.RIGHT_ANKLE, color: "good" },
+  ];
+  const COLORS = { good: "rgba(80,200,120,0.95)", warn: "rgba(255,200,40,0.95)", bad: "rgba(240,80,80,0.95)" } as any;
+  ctx.lineWidth = Math.max(4, ctx.canvas.width / 120);
+  for (const l of lines) {
+    const a = kp[l.a], b = kp[l.b];
+    if (!a || !b || (a.score ?? 0) < 0.3 || (b.score ?? 0) < 0.3) continue;
+    ctx.strokeStyle = COLORS[l.color];
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  for (let i = 5; i <= 16; i++) {
+    const p = kp[i]; if (!p || (p.score ?? 0) < 0.3) continue;
+    ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(4, ctx.canvas.width / 160), 0, Math.PI * 2); ctx.fill();
+  }
+}
+
 function FigureBox({ label, canvasRef }: { label: string; canvasRef: React.RefObject<HTMLCanvasElement | null> }) {
   return (
     <div>

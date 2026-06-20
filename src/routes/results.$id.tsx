@@ -667,11 +667,14 @@ function ReplayPanel({ session, videoUrl }: { session: SessionRecord; videoUrl: 
 
   return (
     <div>
-      <div className="relative rounded-2xl overflow-hidden bg-black aspect-[3/4]">
+      <div
+        className="relative rounded-2xl overflow-hidden bg-black mx-auto"
+        style={{ aspectRatio: `${session.videoWidth} / ${session.videoHeight}`, maxHeight: "70vh" }}
+      >
         <video
           ref={videoRef}
           src={videoUrl}
-          className="h-full w-full object-contain"
+          className="h-full w-full object-cover"
           playsInline
           onTimeUpdate={e => setTime((e.target as HTMLVideoElement).currentTime)}
           onEnded={() => setPlaying(false)}

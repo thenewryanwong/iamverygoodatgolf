@@ -114,25 +114,40 @@ function RecordPage() {
       // Create offscreen video
       const url = URL.createObjectURL(blob);
       const v = document.createElement("video");
-      v.src = url; v.muted = true; v.playsInline = true; v.preload = "auto";
+      v.src = url; v.muted = true; (v as any).playsInline = true; v.setAttribute("playsinline", "");
+      v.preload = "auto";
       await new Promise<void>((res, rej) => {
         v.onloadedmetadata = () => res();
         v.onerror = () => rej(new Error("Could not load video"));
       });
+      // iOS Safari refuses to decode frames until the video has been played once.
+      try { await v.play(); v.pause(); } catch {}
       const duration = v.duration && isFinite(v.duration) ? v.duration : 5;
       const w = v.videoWidth, h = v.videoHeight;
       if (duration < 1.5) throw new Error("Video too short — please record at least 2 seconds.");
 
+      // Helper: seek to a timestamp and resolve when the frame is ready.
+      // Mobile browsers sometimes never fire 'seeked' if the listener is
+      // attached *after* setting currentTime, or if the seek is a no-op.
+      // We attach first, then seek, and bail out with a timeout so the
+      // analyzer can never hang forever on "Loading AI model…".
+      const seekTo = (t: number) => new Promise<void>(resolve => {
+        let done = false;
+        const finish = () => { if (done) return; done = true; v.removeEventListener("seeked", finish); resolve(); };
+        v.addEventListener("seeked", finish, { once: true });
+        try { v.currentTime = t; } catch { finish(); return; }
+        setTimeout(finish, 800);
+      });
+
       // Thumbnail at 25% time
-      v.currentTime = Math.min(duration * 0.25, 1.5);
-      await new Promise<void>(res => { v.onseeked = () => res(); });
+      await seekTo(Math.min(duration * 0.25, 1.5));
       const tc = document.createElement("canvas");
       tc.width = 240; tc.height = Math.round(240 * h / w);
       tc.getContext("2d")!.drawImage(v, 0, 0, tc.width, tc.height);
       const thumbnail = tc.toDataURL("image/jpeg", 0.75);
 
-      // Sample frames at ~15 fps
-      const fps = 15;
+      // Sample frames at ~10 fps (lighter on phones)
+      const fps = 10;
       const total = Math.max(8, Math.floor(duration * fps));
       const frames: FramePose[] = [];
       const canvas = document.createElement("canvas");
@@ -142,11 +157,12 @@ function RecordPage() {
       setProgressLabel("Analyzing your swing…");
       for (let i = 0; i < total; i++) {
         const t = (i / total) * duration;
-        v.currentTime = t;
-        await new Promise<void>(res => { v.onseeked = () => res(); });
+        await seekTo(t);
         ctx.drawImage(v, 0, 0, w, h);
-        const kp = await estimateFrame(canvas);
-        if (kp) frames.push({ t, keypoints: kp });
+        try {
+          const kp = await estimateFrame(canvas);
+          if (kp) frames.push({ t, keypoints: kp });
+        } catch {}
         setProgress(10 + Math.round((i / total) * 80));
       }
 
@@ -298,8 +314,8 @@ function RecordPage() {
 
         {/* Bottom controls */}
         {(phase === "ready" || phase === "setup") && (
-          <div className="absolute bottom-0 inset-x-0 z-30 safe-bottom">
-            <div className="px-6 pb-6 pt-10 bg-gradient-to-t from-black/80 to-transparent">
+          <div className="absolute bottom-0 inset-x-0 z-30 bg-black safe-bottom">
+            <div className="px-6 pb-6 pt-10 bg-gradient-to-t from-black via-black/95 to-transparent">
               <p className="text-center text-xs text-white/70 mb-4">
                 Stand sideways · full body in frame · 6–8 ft away
               </p>
@@ -320,8 +336,8 @@ function RecordPage() {
           </div>
         )}
         {phase === "recording" && (
-          <div className="absolute bottom-0 inset-x-0 z-30 safe-bottom">
-            <div className="px-6 pb-6 pt-10 bg-gradient-to-t from-black/80 to-transparent">
+          <div className="absolute bottom-0 inset-x-0 z-30 bg-black safe-bottom">
+            <div className="px-6 pb-6 pt-10 bg-gradient-to-t from-black via-black/95 to-transparent">
               <div className="flex justify-center">
                 <button
                   onClick={stopRecording}

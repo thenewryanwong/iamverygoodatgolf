@@ -36,7 +36,12 @@ function RecordPage() {
     try {
       streamRef.current?.getTracks().forEach(t => t.stop());
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 720 }, height: { ideal: 1280 } },
+        video: {
+          facingMode: facing,
+          width: { ideal: 720 },
+          height: { ideal: 1280 },
+          aspectRatio: { ideal: 9 / 16 },
+        },
         audio: false,
       });
       streamRef.current = stream;
@@ -314,8 +319,8 @@ function RecordPage() {
 
         {/* Bottom controls */}
         {(phase === "ready" || phase === "setup") && (
-          <div className="absolute bottom-0 inset-x-0 z-30 bg-black safe-bottom">
-            <div className="px-6 pb-6 pt-10 bg-gradient-to-t from-black via-black/95 to-transparent">
+          <div className="absolute bottom-0 inset-x-0 z-30 safe-bottom">
+            <div className="px-6 pb-3 pt-6 bg-gradient-to-t from-black/90 via-black/60 to-transparent">
               <p className="text-center text-xs text-white/70 mb-4">
                 Stand sideways · full body in frame · 6–8 ft away
               </p>
@@ -336,8 +341,8 @@ function RecordPage() {
           </div>
         )}
         {phase === "recording" && (
-          <div className="absolute bottom-0 inset-x-0 z-30 bg-black safe-bottom">
-            <div className="px-6 pb-6 pt-10 bg-gradient-to-t from-black via-black/95 to-transparent">
+          <div className="absolute bottom-0 inset-x-0 z-30 safe-bottom">
+            <div className="px-6 pb-3 pt-6 bg-gradient-to-t from-black/90 via-black/60 to-transparent">
               <div className="flex justify-center">
                 <button
                   onClick={stopRecording}

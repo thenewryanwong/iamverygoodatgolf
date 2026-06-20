@@ -21,12 +21,27 @@ export async function getDetector() {
   if (detectorPromise) return detectorPromise;
   detectorPromise = (async () => {
     const tf = await import("@tensorflow/tfjs");
-    await import("@tensorflow/tfjs-backend-webgl");
-    await tf.setBackend("webgl");
-    await tf.ready();
+    // Try WebGL first (fast on most devices). If it fails (older mobile GPUs,
+    // strict privacy modes, etc.) fall back to CPU so analysis still completes.
+    let backendOk = false;
+    try {
+      await import("@tensorflow/tfjs-backend-webgl");
+      await tf.setBackend("webgl");
+      await tf.ready();
+      backendOk = tf.getBackend() === "webgl";
+    } catch {}
+    if (!backendOk) {
+      try {
+        await import("@tensorflow/tfjs-backend-cpu");
+        await tf.setBackend("cpu");
+        await tf.ready();
+      } catch {}
+    }
     const posedetection = await import("@tensorflow-models/pose-detection");
+    // LIGHTNING is much faster on phones than THUNDER and still accurate enough
+    // for swing analysis — prevents the "stuck on loading" symptom on mobile.
     return posedetection.createDetector(posedetection.SupportedModels.MoveNet, {
-      modelType: posedetection.movenet.modelType.SINGLEPOSE_THUNDER,
+      modelType: posedetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
     });
   })();
   return detectorPromise;

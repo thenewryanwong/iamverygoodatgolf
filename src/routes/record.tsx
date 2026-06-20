@@ -123,16 +123,28 @@ function RecordPage() {
       const w = v.videoWidth, h = v.videoHeight;
       if (duration < 1.5) throw new Error("Video too short — please record at least 2 seconds.");
 
+      // Helper: seek to a timestamp and resolve when the frame is ready.
+      // Mobile browsers sometimes never fire 'seeked' if the listener is
+      // attached *after* setting currentTime, or if the seek is a no-op.
+      // We attach first, then seek, and bail out with a timeout so the
+      // analyzer can never hang forever on "Loading AI model…".
+      const seekTo = (t: number) => new Promise<void>(resolve => {
+        let done = false;
+        const finish = () => { if (done) return; done = true; v.removeEventListener("seeked", finish); resolve(); };
+        v.addEventListener("seeked", finish, { once: true });
+        try { v.currentTime = t; } catch { finish(); return; }
+        setTimeout(finish, 800);
+      });
+
       // Thumbnail at 25% time
-      v.currentTime = Math.min(duration * 0.25, 1.5);
-      await new Promise<void>(res => { v.onseeked = () => res(); });
+      await seekTo(Math.min(duration * 0.25, 1.5));
       const tc = document.createElement("canvas");
       tc.width = 240; tc.height = Math.round(240 * h / w);
       tc.getContext("2d")!.drawImage(v, 0, 0, tc.width, tc.height);
       const thumbnail = tc.toDataURL("image/jpeg", 0.75);
 
-      // Sample frames at ~15 fps
-      const fps = 15;
+      // Sample frames at ~10 fps (lighter on phones)
+      const fps = 10;
       const total = Math.max(8, Math.floor(duration * fps));
       const frames: FramePose[] = [];
       const canvas = document.createElement("canvas");
@@ -142,11 +154,12 @@ function RecordPage() {
       setProgressLabel("Analyzing your swing…");
       for (let i = 0; i < total; i++) {
         const t = (i / total) * duration;
-        v.currentTime = t;
-        await new Promise<void>(res => { v.onseeked = () => res(); });
+        await seekTo(t);
         ctx.drawImage(v, 0, 0, w, h);
-        const kp = await estimateFrame(canvas);
-        if (kp) frames.push({ t, keypoints: kp });
+        try {
+          const kp = await estimateFrame(canvas);
+          if (kp) frames.push({ t, keypoints: kp });
+        } catch {}
         setProgress(10 + Math.round((i / total) * 80));
       }
 

@@ -200,6 +200,9 @@ function scoreColor(v: number) {
 
 function MetricsPanel({ session }: { session: SessionRecord }) {
   const m = session.analysis.metrics;
+  const [phase, setPhase] = useState<IdealPhase>("top");
+  const [overlay, setOverlay] = useState(false);
+
   const rows = [
     { label: "Shoulder turn", val: `${Math.round(m.shoulderTurn)}°`, ideal: "85–105°", v: m.shoulderTurn, range: [85, 105] as const },
     { label: "Hip turn", val: `${Math.round(m.hipTurn)}°`, ideal: "40–55°", v: m.hipTurn, range: [40, 55] as const },
@@ -213,15 +216,65 @@ function MetricsPanel({ session }: { session: SessionRecord }) {
     { label: "Tempo ratio", val: m.tempoRatio.toFixed(2), ideal: "2.6–3.4", v: m.tempoRatio, range: [2.6, 3.4] as const },
   ];
 
+  // Pick the user's frame closest to the requested phase.
+  const userKp = useMemo(() => {
+    const ph = session.analysis.phases;
+    const target = ph[phase];
+    const frames = session.analysis.frames;
+    if (!frames.length) return null;
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < frames.length; i++) {
+      const d = Math.abs(frames[i].t - target);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return frames[best].keypoints;
+  }, [session, phase]);
+
   return (
     <>
-      {/* Stick figure on still */}
-      <StillWithSkeleton session={session} />
+      {/* Phase picker drives both the video frame and the skeleton boxes */}
+      <div className="grid grid-cols-3 gap-2">
+        {(["address", "top", "impact"] as IdealPhase[]).map(p => (
+          <button
+            key={p}
+            onClick={() => setPhase(p)}
+            className={`py-2 rounded-full text-xs font-semibold border capitalize ${
+              phase === p ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground"
+            }`}
+          >
+            {p === "top" ? "Top of swing" : p}
+          </button>
+        ))}
+      </div>
 
-      {/* Side-by-side comparison vs an ideal swing */}
-      <ComparePanel session={session} />
+      {/* Video frame at the selected phase, with user's skeleton overlaid */}
+      <div className="mt-3">
+        <PhaseFrame session={session} phase={phase} userKp={userKp} />
+      </div>
 
+      {/* Two small skeleton-only boxes (you vs perfect), with overlay toggle */}
+      <div className="mt-4 rounded-2xl bg-card border border-border p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] uppercase tracking-widest text-accent font-bold">Compare</p>
+            <h3 className="text-sm font-semibold">Your swing vs perfect</h3>
+          </div>
+          <button
+            onClick={() => setOverlay(o => !o)}
+            className={`h-9 px-3 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${
+              overlay ? "bg-accent text-accent-foreground border-accent" : "bg-card border-border text-muted-foreground"
+            }`}
+            aria-label="Overlay ideal swing"
+          >
+            <Layers className="h-3.5 w-3.5" />
+            {overlay ? "Overlay on" : "Overlay"}
+          </button>
+        </div>
 
+        <SkeletonCompare session={session} phase={phase} userKp={userKp} overlay={overlay} />
+
+        <IdealNotes phase={phase} session={session} />
+      </div>
 
       <div className="mt-4 rounded-2xl bg-card border border-border overflow-hidden">
         {rows.map((r, i) => {
@@ -246,38 +299,170 @@ function MetricsPanel({ session }: { session: SessionRecord }) {
   );
 }
 
-function StillWithSkeleton({ session }: { session: SessionRecord }) {
+/** Top "playing box" — paints the user's video frame at the selected phase
+ *  and overlays the detected skeleton. Uses a mobile-robust seek that
+ *  attaches the seeked listener before assigning currentTime and falls
+ *  back to a timeout, so iOS / Android Chrome don't get stuck on black. */
+function PhaseFrame({
+  session, phase, userKp,
+}: { session: SessionRecord; phase: IdealPhase; userKp: any[] | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const urlRef = useRef<string | null>(null);
+
+  // Create the (offscreen) decode video once per session.
   useEffect(() => {
-    let revoke: string | null = null;
-    (async () => {
-      const v = document.createElement("video");
-      const url = URL.createObjectURL(session.videoBlob);
-      revoke = url;
-      v.src = url; v.muted = true; v.playsInline = true;
-      await new Promise<void>(res => { v.onloadedmetadata = () => res(); });
-      v.currentTime = session.analysis.phases.top;
-      await new Promise<void>(res => { v.onseeked = () => res(); });
-      const c = canvasRef.current!;
-      const W = session.videoWidth, H = session.videoHeight;
-      c.width = W; c.height = H;
-      const ctx = c.getContext("2d")!;
-      ctx.drawImage(v, 0, 0, W, H);
-      // overlay skeleton from the keyframe
-      drawSkeleton(ctx, session.analysis.frames[session.analysis.keyFrameIdx].keypoints, session.analysis);
-    })();
-    return () => { if (revoke) URL.revokeObjectURL(revoke); };
+    const url = URL.createObjectURL(session.videoBlob);
+    urlRef.current = url;
+    const v = document.createElement("video");
+    v.src = url;
+    v.muted = true;
+    v.playsInline = true;
+    (v as any).preload = "auto";
+    videoRef.current = v;
+    // iOS Safari needs a play/pause to prime decoding before seeking.
+    const prime = async () => {
+      try { await v.play(); v.pause(); } catch { /* ignore autoplay block */ }
+    };
+    const onLoaded = () => { prime(); };
+    v.addEventListener("loadedmetadata", onLoaded, { once: true });
+    return () => {
+      v.removeEventListener("loadedmetadata", onLoaded);
+      v.src = "";
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
+      videoRef.current = null;
+    };
   }, [session]);
+
+  // Re-paint whenever the phase changes.
+  useEffect(() => {
+    const v = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!v || !canvas) return;
+    let cancelled = false;
+
+    const paint = () => {
+      if (cancelled) return;
+      const W = session.videoWidth || v.videoWidth || 720;
+      const H = session.videoHeight || v.videoHeight || 1280;
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      try { ctx.drawImage(v, 0, 0, W, H); } catch { /* video not ready */ }
+      if (userKp) drawSkeleton(ctx, userKp, session.analysis);
+    };
+
+    const seekAndPaint = async () => {
+      const targetT = session.analysis.phases[phase] ?? 0;
+      // Wait for metadata if not ready yet.
+      if (!v.duration || Number.isNaN(v.duration)) {
+        await new Promise<void>(res => {
+          const on = () => res();
+          v.addEventListener("loadedmetadata", on, { once: true });
+        });
+      }
+      if (cancelled) return;
+      const safeT = Math.max(0, Math.min(v.duration - 0.05, targetT));
+      // Attach listener BEFORE setting currentTime (iOS reliability), with timeout fallback.
+      await new Promise<void>(res => {
+        let done = false;
+        const finish = () => { if (done) return; done = true; v.removeEventListener("seeked", finish); res(); };
+        v.addEventListener("seeked", finish, { once: true });
+        try { v.currentTime = safeT; } catch { finish(); }
+        setTimeout(finish, 900);
+      });
+      // Give the decoder one frame to commit.
+      await new Promise(r => requestAnimationFrame(() => r(null)));
+      paint();
+    };
+
+    seekAndPaint();
+    return () => { cancelled = true; };
+  }, [phase, userKp, session]);
+
+  const aspect = `${session.videoWidth || 9} / ${session.videoHeight || 16}`;
   return (
-    <div className="rounded-2xl overflow-hidden bg-black aspect-[3/4] grid place-items-center">
-      <canvas ref={canvasRef} className="h-full w-full object-contain" />
+    <div
+      className="rounded-2xl overflow-hidden bg-black mx-auto"
+      style={{ aspectRatio: aspect, maxHeight: "60vh", maxWidth: "100%" }}
+    >
+      <canvas ref={canvasRef} className="h-full w-full block object-contain" />
+    </div>
+  );
+}
+
+/** Two small skeleton-only boxes (you vs perfect), with optional overlay. */
+function SkeletonCompare({
+  session, phase, userKp, overlay,
+}: { session: SessionRecord; phase: IdealPhase; userKp: any[] | null; overlay: boolean }) {
+  const yourCanvasRef = useRef<HTMLCanvasElement>(null);
+  const idealCanvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const render = (canvas: HTMLCanvasElement | null, kp: any[] | null, srcW?: number, srcH?: number) => {
+      if (!canvas || !kp) return;
+      const dpr = window.devicePixelRatio || 1;
+      const W = canvas.clientWidth, H = canvas.clientHeight;
+      if (!W || !H) return;
+      canvas.width = W * dpr; canvas.height = H * dpr;
+      const ctx = canvas.getContext("2d")!;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      const fitted = srcW
+        ? fitPoseToBox(kp, W, H, srcW, srcH)
+        : fitPoseToBox(kp, W, H, session.videoWidth, session.videoHeight);
+      drawSkeleton(ctx, fitted as any, session.analysis);
+    };
+
+    if (!overlay) {
+      render(yourCanvasRef.current, userKp ?? null);
+      render(idealCanvasRef.current, idealPose(phase), 100, 220);
+      return;
+    }
+
+    const oc = overlayCanvasRef.current;
+    if (oc && userKp) {
+      const dpr = window.devicePixelRatio || 1;
+      const W = oc.clientWidth, H = oc.clientHeight;
+      if (!W || !H) return;
+      oc.width = W * dpr; oc.height = H * dpr;
+      const ctx = oc.getContext("2d")!;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      const userFitted = fitPoseToBox(userKp as any, W, H, session.videoWidth, session.videoHeight);
+      drawSkeleton(ctx, userFitted as any, session.analysis);
+      const ideal = fitPoseToBox(idealPose(phase), W, H, 100, 220);
+      const alignedIdeal = alignPoseTo(ideal, userFitted as any);
+      drawIdealOverlay(ctx, alignedIdeal);
+    }
+  }, [userKp, phase, overlay, session]);
+
+  if (overlay) {
+    return (
+      <div className="mt-4">
+        <div className="rounded-xl bg-black aspect-[3/4] overflow-hidden">
+          <canvas ref={overlayCanvasRef} className="h-full w-full block" />
+        </div>
+        <div className="mt-2 flex items-center justify-center gap-4 text-[11px] text-muted-foreground">
+          <LegendDot color="rgba(80,200,120,0.95)" label="Your pose" />
+          <LegendDot color="rgba(201,162,39,0.95)" label="Ideal pose" dashed />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-4 grid grid-cols-2 gap-3">
+      <FigureBox label="You" canvasRef={yourCanvasRef} />
+      <FigureBox label="Perfect" canvasRef={idealCanvasRef} />
     </div>
   );
 }
 
 function drawSkeleton(ctx: CanvasRenderingContext2D, kp: any[], analysis: any) {
   const m = analysis.metrics;
-  // joint-pair classification: lead arm + shoulders + hips + spine
   const lines: { a: number; b: number; color: string }[] = [
     { a: KP.LEFT_SHOULDER, b: KP.RIGHT_SHOULDER, color: m.shoulderTurn >= 85 && m.shoulderTurn <= 105 ? "good" : "bad" },
     { a: KP.LEFT_HIP, b: KP.RIGHT_HIP, color: m.hipTurn >= 40 && m.hipTurn <= 55 ? "good" : "bad" },
@@ -298,126 +483,11 @@ function drawSkeleton(ctx: CanvasRenderingContext2D, kp: any[], analysis: any) {
     ctx.strokeStyle = COLORS[l.color];
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   }
-  // joints
   ctx.fillStyle = "rgba(255,255,255,0.95)";
   for (let i = 5; i <= 16; i++) {
     const p = kp[i]; if (!p || (p.score ?? 0) < 0.3) continue;
     ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(4, ctx.canvas.width / 160), 0, Math.PI * 2); ctx.fill();
   }
-}
-
-/* ---------------- Compare with perfect swing ---------------- */
-
-function ComparePanel({ session }: { session: SessionRecord }) {
-  const [phase, setPhase] = useState<IdealPhase>("top");
-  const [overlay, setOverlay] = useState(false);
-  const yourCanvasRef = useRef<HTMLCanvasElement>(null);
-  const idealCanvasRef = useRef<HTMLCanvasElement>(null);
-  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
-
-  // Pick the user's frame closest to the requested phase.
-  const userKp = useMemo(() => {
-    const ph = session.analysis.phases;
-    const target = ph[phase];
-    const frames = session.analysis.frames;
-    if (!frames.length) return null;
-    let best = 0, bd = Infinity;
-    for (let i = 0; i < frames.length; i++) {
-      const d = Math.abs(frames[i].t - target);
-      if (d < bd) { bd = d; best = i; }
-    }
-    return frames[best].keypoints;
-  }, [session, phase]);
-
-  // Render two side-by-side stick figures (your swing vs perfect).
-  useEffect(() => {
-    const render = (canvas: HTMLCanvasElement | null, kp: any[] | null, srcW?: number, srcH?: number) => {
-      if (!canvas || !kp) return;
-      const dpr = window.devicePixelRatio || 1;
-      const W = canvas.clientWidth, H = canvas.clientHeight;
-      canvas.width = W * dpr; canvas.height = H * dpr;
-      const ctx = canvas.getContext("2d")!;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, W, H);
-      const fitted = srcW ? fitPoseToBox(kp, W, H, srcW, srcH) : fitPoseToBox(kp, W, H, session.videoWidth, session.videoHeight);
-      drawSkeleton(ctx, fitted as any, session.analysis);
-    };
-    render(yourCanvasRef.current, userKp ?? null);
-    render(idealCanvasRef.current, idealPose(phase), 100, 220);
-
-    // Overlay: ideal in gold dashed lines over user's pose.
-    const oc = overlayCanvasRef.current;
-    if (oc && overlay && userKp) {
-      const dpr = window.devicePixelRatio || 1;
-      const W = oc.clientWidth, H = oc.clientHeight;
-      oc.width = W * dpr; oc.height = H * dpr;
-      const ctx = oc.getContext("2d")!;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, W, H);
-      // Draw user pose with the regular palette.
-      const userFitted = fitPoseToBox(userKp as any, W, H, session.videoWidth, session.videoHeight);
-      drawSkeleton(ctx, userFitted as any, session.analysis);
-      // Draw ideal in gold over the top, aligned to the user's torso.
-      const ideal = fitPoseToBox(idealPose(phase), W, H, 100, 220);
-      const alignedIdeal = alignPoseTo(ideal, userFitted as any);
-      drawIdealOverlay(ctx, alignedIdeal);
-    }
-  }, [userKp, phase, overlay, session]);
-
-  return (
-    <div className="mt-4 rounded-2xl bg-card border border-border p-4">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-[11px] uppercase tracking-widest text-accent font-bold">Compare</p>
-          <h3 className="text-sm font-semibold">Your swing vs perfect</h3>
-        </div>
-        <button
-          onClick={() => setOverlay(o => !o)}
-          className={`h-9 px-3 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${
-            overlay ? "bg-accent text-accent-foreground border-accent" : "bg-card border-border text-muted-foreground"
-          }`}
-          aria-label="Overlay ideal swing"
-        >
-          <Layers className="h-3.5 w-3.5" />
-          {overlay ? "Overlay on" : "Overlay"}
-        </button>
-      </div>
-
-      {/* Phase picker */}
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        {(["address", "top", "impact"] as IdealPhase[]).map(p => (
-          <button
-            key={p}
-            onClick={() => setPhase(p)}
-            className={`py-2 rounded-full text-xs font-semibold border capitalize ${
-              phase === p ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground"
-            }`}
-          >
-            {p === "top" ? "Top of swing" : p}
-          </button>
-        ))}
-      </div>
-
-      {overlay ? (
-        <div className="mt-4">
-          <div className="rounded-xl bg-black aspect-[3/4] overflow-hidden">
-            <canvas ref={overlayCanvasRef} className="h-full w-full block" />
-          </div>
-          <div className="mt-2 flex items-center justify-center gap-4 text-[11px] text-muted-foreground">
-            <LegendDot color="rgba(80,200,120,0.95)" label="Your pose" />
-            <LegendDot color="var(--gold)" label="Ideal pose" dashed />
-          </div>
-        </div>
-      ) : (
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <FigureBox label="You" canvasRef={yourCanvasRef} />
-          <FigureBox label="Perfect" canvasRef={idealCanvasRef} />
-        </div>
-      )}
-
-      <IdealNotes phase={phase} session={session} />
-    </div>
-  );
 }
 
 function FigureBox({ label, canvasRef }: { label: string; canvasRef: React.RefObject<HTMLCanvasElement | null> }) {

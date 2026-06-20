@@ -114,11 +114,14 @@ function RecordPage() {
       // Create offscreen video
       const url = URL.createObjectURL(blob);
       const v = document.createElement("video");
-      v.src = url; v.muted = true; v.playsInline = true; v.preload = "auto";
+      v.src = url; v.muted = true; (v as any).playsInline = true; v.setAttribute("playsinline", "");
+      v.preload = "auto";
       await new Promise<void>((res, rej) => {
         v.onloadedmetadata = () => res();
         v.onerror = () => rej(new Error("Could not load video"));
       });
+      // iOS Safari refuses to decode frames until the video has been played once.
+      try { await v.play(); v.pause(); } catch {}
       const duration = v.duration && isFinite(v.duration) ? v.duration : 5;
       const w = v.videoWidth, h = v.videoHeight;
       if (duration < 1.5) throw new Error("Video too short — please record at least 2 seconds.");

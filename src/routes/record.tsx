@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { estimateFrame, type FramePose } from "@/lib/pose/detector";
+import { estimateFrame, getDetector, type FramePose } from "@/lib/pose/detector";
 import { analyzeSwing } from "@/lib/pose/analyze";
 import { saveSession } from "@/lib/storage";
 import {

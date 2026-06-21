@@ -86,6 +86,32 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useEffect(() => {
+    // After a redeploy, the browser may hold a route/chunk URL that no longer
+    // exists. Reload once so it picks up the new asset manifest.
+    const isStaleChunk = (msg: string) =>
+      /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i.test(msg);
+    const reloadOnce = () => {
+      const key = "__lov_chunk_reload";
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+      window.location.reload();
+    };
+    const onErr = (e: ErrorEvent) => { if (e?.message && isStaleChunk(e.message)) reloadOnce(); };
+    const onRej = (e: PromiseRejectionEvent) => {
+      const m = (e?.reason && (e.reason.message || String(e.reason))) || "";
+      if (isStaleChunk(m)) reloadOnce();
+    };
+    window.addEventListener("error", onErr);
+    window.addEventListener("unhandledrejection", onRej);
+    // Clear the guard after a successful load so future stale chunks can also recover.
+    const t = setTimeout(() => sessionStorage.removeItem("__lov_chunk_reload"), 5000);
+    return () => {
+      window.removeEventListener("error", onErr);
+      window.removeEventListener("unhandledrejection", onRej);
+      clearTimeout(t);
+    };
+  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />

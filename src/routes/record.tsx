@@ -184,7 +184,18 @@ function RecordPage() {
       URL.revokeObjectURL(url);
       navigate({ to: "/results/$id", params: { id } });
     } catch (e: any) {
-      setError(e?.message ?? "Analysis failed");
+      const msg = String(e?.message ?? "");
+      // Stale chunk after a fresh deploy: the cached HTML references a JS
+      // bundle hash that no longer exists. Reload once to grab the new one.
+      if (/Failed to fetch dynamically imported module|Importing a module script failed/i.test(msg)) {
+        const k = "swing_reload_once";
+        if (!sessionStorage.getItem(k)) {
+          sessionStorage.setItem(k, "1");
+          location.reload();
+          return;
+        }
+      }
+      setError(msg || "Analysis failed");
       setPhase("error");
     }
   };

@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { estimateFrame, type FramePose } from "@/lib/pose/detector";
+import { estimateFrame, getDetector, type FramePose } from "@/lib/pose/detector";
 import { analyzeSwing } from "@/lib/pose/analyze";
 import { saveSession } from "@/lib/storage";
 import {
@@ -60,6 +60,10 @@ function RecordPage() {
   }, [facing]);
 
   useEffect(() => { startCamera(); return () => { streamRef.current?.getTracks().forEach(t => t.stop()); }; }, [startCamera]);
+  // Warm the AI model chunks while the user lines up the shot so analysis
+  // doesn't have to fetch them after recording (and so any stale-chunk
+  // failure surfaces early enough for the auto-reload to kick in).
+  useEffect(() => { getDetector().catch(() => {}); }, []);
 
   const beginCountdown = () => {
     setPhase("countdown");
@@ -184,7 +188,18 @@ function RecordPage() {
       URL.revokeObjectURL(url);
       navigate({ to: "/results/$id", params: { id } });
     } catch (e: any) {
-      setError(e?.message ?? "Analysis failed");
+      const msg = String(e?.message ?? "");
+      // Stale chunk after a fresh deploy: the cached HTML references a JS
+      // bundle hash that no longer exists. Reload once to grab the new one.
+      if (/Failed to fetch dynamically imported module|Importing a module script failed/i.test(msg)) {
+        const k = "swing_reload_once";
+        if (!sessionStorage.getItem(k)) {
+          sessionStorage.setItem(k, "1");
+          location.reload();
+          return;
+        }
+      }
+      setError(msg || "Analysis failed");
       setPhase("error");
     }
   };
@@ -320,7 +335,7 @@ function RecordPage() {
         {/* Bottom controls */}
         {(phase === "ready" || phase === "setup") && (
           <div className="absolute bottom-0 inset-x-0 z-30 safe-bottom">
-            <div className="px-6 pb-3 pt-6 bg-gradient-to-t from-black/90 via-black/60 to-transparent">
+            <div className="px-6 pb-3 pt-3 bg-gradient-to-t from-black/85 via-black/40 to-transparent">
               <p className="text-center text-xs text-white/70 mb-4">
                 Stand sideways · full body in frame · 6–8 ft away
               </p>
@@ -342,7 +357,7 @@ function RecordPage() {
         )}
         {phase === "recording" && (
           <div className="absolute bottom-0 inset-x-0 z-30 safe-bottom">
-            <div className="px-6 pb-3 pt-6 bg-gradient-to-t from-black/90 via-black/60 to-transparent">
+            <div className="px-6 pb-3 pt-3 bg-gradient-to-t from-black/85 via-black/40 to-transparent">
               <div className="flex justify-center">
                 <button
                   onClick={stopRecording}

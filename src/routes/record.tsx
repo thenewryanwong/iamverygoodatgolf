@@ -60,6 +60,10 @@ function RecordPage() {
   }, [facing]);
 
   useEffect(() => { startCamera(); return () => { streamRef.current?.getTracks().forEach(t => t.stop()); }; }, [startCamera]);
+  // Warm the AI model chunks while the user lines up the shot so analysis
+  // doesn't have to fetch them after recording (and so any stale-chunk
+  // failure surfaces early enough for the auto-reload to kick in).
+  useEffect(() => { getDetector().catch(() => {}); }, []);
 
   const beginCountdown = () => {
     setPhase("countdown");

@@ -210,7 +210,7 @@ function RecordPage() {
         {/* Top bar */}
         <div className="absolute top-0 inset-x-0 z-30 safe-top">
           <div className="flex items-center justify-between px-4 py-3">
-            <button onClick={() => history.back()} className="h-10 w-10 grid place-items-center rounded-full bg-black/40 backdrop-blur">
+            <button onClick={() => navigate({ to: "/" })} className="h-10 w-10 grid place-items-center rounded-full bg-black/40 backdrop-blur" aria-label="Back to home">
               <ChevronLeft className="h-5 w-5" />
             </button>
             <div className="px-3 py-1.5 rounded-full bg-black/40 backdrop-blur text-xs font-medium">

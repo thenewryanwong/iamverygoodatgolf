@@ -1,11 +1,10 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Home, History, User, Video } from "lucide-react";
+import { Home, History, Video } from "lucide-react";
 
 const items = [
   { to: "/", icon: Home, label: "Home" },
   { to: "/record", icon: Video, label: "Record" },
   { to: "/history", icon: History, label: "History" },
-  { to: "/profile", icon: User, label: "Profile" },
 ] as const;
 
 export function BottomNav() {

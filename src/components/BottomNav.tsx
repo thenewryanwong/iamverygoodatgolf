@@ -1,10 +1,11 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Home, History, Video } from "lucide-react";
+import { Home, History, User, Video } from "lucide-react";
 
 const items = [
   { to: "/", icon: Home, label: "Home" },
   { to: "/record", icon: Video, label: "Record" },
   { to: "/history", icon: History, label: "History" },
+  { to: "/profile", icon: User, label: "Profile" },
 ] as const;
 
 export function BottomNav() {
@@ -15,7 +16,7 @@ export function BottomNav() {
     <nav className="fixed bottom-0 inset-x-0 z-40 safe-bottom">
       <div className="mx-auto max-w-[480px] px-4 pb-2">
         <div className="glass border border-border rounded-3xl shadow-lg">
-          <div className="grid grid-cols-3">
+          <div className="grid grid-cols-4">
             {items.map(({ to, icon: Icon, label }) => {
               const active = to === "/" ? pathname === "/" : pathname.startsWith(to);
               return (

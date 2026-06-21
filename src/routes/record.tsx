@@ -206,7 +206,7 @@ function RecordPage() {
 
   return (
     <AppShell fullscreen>
-      <div className="relative min-h-dvh bg-black text-white">
+      <div className="relative min-h-dvh bg-background text-foreground">
         {/* Top bar */}
         <div className="absolute top-0 inset-x-0 z-30 safe-top">
           <div className="flex items-center justify-between px-4 py-3">
